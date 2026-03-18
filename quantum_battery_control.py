@@ -19,8 +19,8 @@ gamma    = 0.05 * omega   # dissipation rate (charger only)
 mu       = 0.5  * omega   # coupling to laser field
 Nb_T     = 0.0            # zero temperature
 kappa    = 0.5            # initial guess amplitude (eq. 9)
-lambda_a = 10.0           # Appendix D Fig.5: lambda~9.9 gives W_opt~6 with ~1300 steps
-N_iter   = 1500           # Appendix D: ~1300-1500 steps needed at lambda~10
+lambda_a = 5.0            # best result: lambda=5, 500 iterations
+N_iter   = 500            # best result iteration count
 
 tau   = np.pi / g         # final time: maximises sinusoidal charging
 N_t   = 1001
