@@ -11,15 +11,15 @@ import os
 os.makedirs('./graphs', exist_ok=True)
 
 omega    = 1.0
-g        = 0.2  * omega   # charger-battery coupling
-gamma    = 0.05 * omega   # dissipation rate
-mu       = 0.5  * omega   # coupling to laser field
-Nb_T     = 0.0            # zero temperature
-kappa    = 0.5            # initial guess amplitude
-lambda_a = 5.0            # lambda=5, 500 iterations
-N_iter   = 500            # iter count
+g        = 0.2  * omega
+gamma    = 0.05 * omega
+mu       = 0.5  * omega
+Nb_T     = 0.0
+kappa    = 0.5
+lambda_a = 5.0
+N_iter   = 500
 
-tau   = np.pi / g         # final time
+tau   = np.pi / g
 N_t   = 1001
 tlist = np.linspace(0.0, tau, N_t)
 dt    = tlist[1] - tlist[0]
@@ -32,7 +32,7 @@ sp_A = tensor(sp, I2);  sm_A = tensor(sm, I2)
 sx_B = tensor(I2, sx);  sz_B = tensor(I2, sz)
 sp_B = tensor(I2, sp);  sm_B = tensor(I2, sm)
 
-# Hamiltonian — equation
+# Hamiltonian
 H_A       = (omega / 2.0) * ((-sz_A) + tensor(I2, I2))
 H_B       = (omega / 2.0) * ((-sz_B) + tensor(I2, I2))
 H_int     = g * (sp_A * sm_B + sm_A * sp_B)
@@ -48,10 +48,21 @@ Lc_mat = liouvillian(H_control).data.toarray()
 
 # States
 rho0    = ket2dm(tensor(basis(2, 0), basis(2, 0)))  # |00><00|
-rho_tgt = ket2dm(tensor(basis(2, 0), basis(2, 1)))  # |01><01|
+
+rho_tgt = (
+    ket2dm(tensor(basis(2, 0), basis(2, 1))) +
+    ket2dm(tensor(basis(2, 1), basis(2, 1)))
+) / 2.0
 
 rho0_np  = operator_to_vector(rho0).full().flatten()    # (16,)
 rtgt_np  = operator_to_vector(rho_tgt).full().flatten() # (16,)
+
+rtgt_norm_sq = np.real(rtgt_np.conj() @ rtgt_np)
+rtgt_hs_norm = np.sqrt(rtgt_norm_sq)
+rtgt_normalized_np = rtgt_np / rtgt_hs_norm
+
+# print(f"rho_tgt Hilbert-Schmidt norm: {rtgt_hs_norm:.6f}")
+# print(f"Max achievable fidelity F:    {rtgt_norm_sq:.6f}")
 
 # Shape function S(t)
 ton = toff = 0.005 * tau
@@ -69,13 +80,13 @@ S_array = np.array([S_of_t(t) for t in tlist])
 def eps_sin_func(t, args=None):
     return 2.0 * np.cos(omega * t)
 
-# Initial guess: eps^(0)(t) = S(t) * kappa
+# Initial guess
 eps_array = S_array * kappa
 
-# Krotov algorithm for open quantum systems
+# Krotov algorithm
 def backward_propagate(eps_arr):
     states = np.zeros((N_t, 16), dtype=complex)
-    states[-1] = rtgt_np
+    states[-1] = rtgt_normalized_np
     for k in range(N_t - 1, 0, -1):
         eps_mid = 0.5 * (eps_arr[k] + eps_arr[k - 1])
         L_tot   = L0_mat + eps_mid * Lc_mat
@@ -85,14 +96,14 @@ def backward_propagate(eps_arr):
 
 print("Running Krotov optimisation ...")
 
-F_prev          = 0.0
+F_prev           = 0.0
 no_improve_count = 0
-tol             = 1e-6   # tolerance
-patience        = 40     # stop after this many not improved iterations
+tol              = 1e-6
+patience         = 40
 
 for iteration in range(N_iter):
 
-    bwd = backward_propagate(eps_array)
+    bwd     = backward_propagate(eps_array)
     new_eps = eps_array.copy()
     rho     = rho0_np.copy()
 
@@ -111,28 +122,29 @@ for iteration in range(N_iter):
 
     # Boundary condition
     new_eps = new_eps * S_array
-    F = np.real(rtgt_np.conj() @ rho)
+
+    F      = np.real(rtgt_np.conj() @ rho)
+    F_norm = F / rtgt_norm_sq
 
     eps_array = new_eps
 
     if (iteration + 1) % 20 == 0 or iteration == 0:
         W_cur = np.trapz(eps_array**2, tlist)
-        print(f"  iter {iteration + 1:4d}   fidelity = {F:.6f}   W = {W_cur:.3f}")
+        print(f"  iter {iteration + 1:4d}   fidelity = {F_norm:.6f}   W = {W_cur:.3f}")
 
-    # halt when fidelity stops improving
-    if abs(F - F_prev) < tol:
+    if abs(F_norm - F_prev) < tol:
         no_improve_count += 1
         if no_improve_count >= patience:
             print(f"  Converged at iteration {iteration + 1} (fidelity change < {tol})")
             break
     else:
         no_improve_count = 0
-    F_prev = F
+    F_prev = F_norm
 
 print("Optimisation finished.")
 eps_opt_array = eps_array.copy()
 
-# Final time evolution using QuTiP mesolve
+# Final time evolution
 def make_interp_pulse(arr):
     def _pulse(t, args=None):
         return float(np.interp(t, tlist, arr))
@@ -172,7 +184,7 @@ def ergotropy_rho(rho_sys, H_b_local):
 
     return E, max(0.0, E - E_pass)
 
-# Observables at every time step
+# Observables
 E_opt   = np.zeros(N_t)
 erg_opt = np.zeros(N_t)
 E_sin   = np.zeros(N_t)
@@ -187,7 +199,7 @@ erg_opt_n = erg_opt / omega
 E_sin_n   = E_sin   / omega
 erg_sin_n = erg_sin / omega
 
-gt = tlist * g   # x-axis
+gt = tlist * g
 
 # Quality factors
 aE    = (erg_opt[-1] / erg_sin[-1] - 1.0) * 100.0 if erg_sin[-1] > 0 else float('nan')
@@ -203,7 +215,7 @@ print(f"  W_opt   = {W_opt:.2f}  (paper: ~6.38)")
 print(f"  W_osc   = {W_osc:.2f}  (paper: ~31.42)")
 print(f"  alpha_W = {aW:.1f}%   (paper: ~392%)")
 
-# Energy & Ergotropy vs g*t
+# Figure 2(a)
 fig, ax = plt.subplots(figsize=(5, 4))
 
 ax.plot(gt, E_opt_n,   color='green', linestyle='-',  linewidth=1.5, label='Energy (opt)')
@@ -222,7 +234,7 @@ plt.savefig('./graphs/energy_ergotropy.png', dpi=200)
 plt.close()
 print("Saved: ./graphs/energy_ergotropy.png")
 
-# Pulse shapes
+# Figure 2(b)
 eps_sin_array = np.array([eps_sin_func(t) for t in tlist])
 
 fig, ax = plt.subplots(figsize=(5, 3))
